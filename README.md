@@ -2,7 +2,7 @@
 
 A production-ready bookmark manager built with **Next.js (App Router)** and **Supabase**.
 
-This application enables users to authenticate via **Google OAuth** and manage **private bookmarks** with secure database-level enforcement and real-time synchronization across multiple browser tabs.
+This application enables users to authenticate via Google OAuth and manage private bookmarks with strict database-level security and real-time synchronization across multiple browser tabs.
 
 ---
 
@@ -16,7 +16,7 @@ This application enables users to authenticate via **Google OAuth** and manage *
 
 ---
 
-# 🛠 Tech Stack
+## 🛠 Tech Stack
 
 ### Frontend
 
@@ -37,7 +37,7 @@ This application enables users to authenticate via **Google OAuth** and manage *
 
 ---
 
-# ✨ Core Features
+## ✨ Core Features
 
 * 🔐 Google OAuth authentication (no password storage)
 * ➕ Add bookmarks (title + normalized URL)
@@ -46,25 +46,30 @@ This application enables users to authenticate via **Google OAuth** and manage *
 * ❌ Secure delete with confirmation
 * 🚫 Database-level duplicate prevention
 * 🌐 URL normalization for consistent uniqueness
-* 🚀 Fully production deployed with proper OAuth redirect configuration
+* 🚀 Fully deployed production environment
 
 ---
 
 # 🧠 System Architecture
 
+---
+
 ## 1️⃣ Authentication Flow
 
-* Google OAuth handled by Supabase
-* Session stored client-side
-* `AuthGuard` protects private routes
-* Unauthorized users redirected using `router.replace()` (no back navigation issue)
-* Production + local redirect URLs properly configured
+Authentication is handled using Supabase Google OAuth.
 
-Security model:
+After login:
 
-* No custom auth logic
-* No service role key exposed
-* Supabase enforces identity at database layer
+* Supabase manages the session securely.
+* `AuthGuard` protects private routes.
+* Unauthenticated users are redirected using `router.replace()` to prevent back-navigation issues.
+* OAuth redirect URLs are configured for both local and production environments.
+
+### Security Model
+
+* No custom authentication logic implemented.
+* No service role key exposed in frontend.
+* Identity is enforced at the database layer via Supabase.
 
 ---
 
@@ -95,9 +100,9 @@ on bookmarks(user_id, url);
 
 This ensures:
 
-* A user cannot store the same normalized URL twice
-* Integrity is enforced at the database level
-* Frontend does not need to enforce uniqueness logic
+* A user cannot store the same normalized URL twice.
+* Data integrity is enforced at the database level.
+* Frontend does not rely on manual duplicate checking.
 
 ---
 
@@ -122,11 +127,11 @@ with check (auth.uid() = user_id)
 using (auth.uid() = user_id)
 ```
 
-Result:
+### Result
 
-* Users can only access their own data
-* No cross-user data exposure possible
-* Security enforced by PostgreSQL, not frontend logic
+* Users can only access their own data.
+* No cross-user data exposure is possible.
+* Security is enforced by PostgreSQL — not frontend filtering.
 
 ---
 
@@ -140,37 +145,37 @@ Supabase Realtime streams changes directly from PostgreSQL WAL.
 ALTER TABLE public.bookmarks REPLICA IDENTITY FULL;
 ```
 
-Why this matters:
+### Why This Was Necessary
 
-By default, PostgreSQL only sends primary keys for DELETE events.
-Setting `REPLICA IDENTITY FULL` ensures full row data is streamed, enabling proper filtered realtime subscriptions.
-
----
+By default, PostgreSQL only streams primary keys for DELETE events.
+Setting `REPLICA IDENTITY FULL` ensures full row data is streamed, allowing proper realtime synchronization for deletions.
 
 ### Client Subscription
 
 ```ts
 supabase
   .channel("bookmarks-realtime")
-  .on("postgres_changes", {
-    event: "*",
-    schema: "public",
-    table: "bookmarks",
-    filter: `user_id=eq.${user.id}`,
-  }, () => {
-    fetchBookmarks();
-  })
+  .on(
+    "postgres_changes",
+    {
+      event: "*",
+      schema: "public",
+      table: "bookmarks",
+      filter: `user_id=eq.${user.id}`,
+    },
+    () => {
+      fetchBookmarks();
+    }
+  )
   .subscribe();
 ```
 
 ### Design Decisions
 
-* Filtered by `user_id`
-* Refetch strategy for correctness
-* Cleanup on unmount
-* Avoid manual optimistic mutation complexity
-
-This prioritizes reliability over cleverness.
+* Realtime filtered by `user_id`
+* Refetch strategy used for correctness
+* Subscription cleanup implemented on unmount
+* Prioritized reliability over complex optimistic state updates
 
 ---
 
@@ -178,14 +183,14 @@ This prioritizes reliability over cleverness.
 
 Before insertion:
 
-* Hostname lowercased
-* Hash removed
+* Hostname is lowercased
+* Hash fragments removed
 * Trailing slash normalized (non-root)
 * Query parameters preserved
 
 Example:
 
-All normalize to the same value:
+All of these normalize to the same value:
 
 ```
 https://google.com
@@ -194,20 +199,75 @@ https://GOOGLE.com
 https://google.com/#section
 ```
 
-This guarantees database uniqueness works as intended.
+This guarantees that database uniqueness constraints work reliably.
 
 ---
 
-# 🔐 Security Model
+# 🧩 Challenges Faced & Solutions
 
-* No service role key exposed
-* Only public anon key used
-* Strict RLS enforcement
-* OAuth-only authentication
-* Realtime filtered per authenticated user
-* Database-level uniqueness constraints
+---
 
-Security is enforced at the **database**, not trusted to the client.
+## Realtime Delete Events Not Updating
+
+**Issue:**
+Insert events worked immediately, but delete events did not sync across tabs.
+
+**Cause:**
+PostgreSQL only streams primary key values for DELETE events by default.
+
+**Solution:**
+
+```sql
+ALTER TABLE public.bookmarks REPLICA IDENTITY FULL;
+```
+
+This ensured full row data was streamed, enabling proper realtime synchronization.
+
+---
+
+## Enforcing True User-Level Privacy
+
+**Issue:**
+Frontend filtering alone is not secure.
+
+**Solution:**
+Enabled Row Level Security with strict policies using:
+
+```sql
+auth.uid() = user_id
+```
+
+Security is enforced directly by PostgreSQL.
+
+---
+
+## Handling Duplicate URLs Correctly
+
+**Issue:**
+Different variations of the same URL could bypass uniqueness.
+
+**Solution:**
+
+* Normalized URLs before insertion.
+* Added composite unique index on `(user_id, url)`.
+
+This ensures database-driven integrity.
+
+---
+
+## OAuth Production Configuration
+
+**Issue:**
+Hardcoded localhost redirects break in production.
+
+**Solution:**
+Used dynamic redirect:
+
+```ts
+redirectTo: window.location.origin
+```
+
+Configured Supabase and Google OAuth for both environments.
 
 ---
 
@@ -216,18 +276,18 @@ Security is enforced at the **database**, not trusted to the client.
 This project emphasizes:
 
 * Database-driven integrity
-* Production-aware OAuth configuration
 * Secure multi-user isolation
+* Production-aware OAuth configuration
 * Real-time correctness
-* Clean component separation
+* Clean separation of concerns
 * Simplicity over over-engineering
 
-Components:
+### Component Responsibilities
 
-* `AuthGuard` handles access control
-* Page component manages state
-* `BookmarkList` is presentational
-* `BookmarkForm` handles normalization + validation
+* `AuthGuard` → Access control
+* `page.tsx` → State + data logic
+* `BookmarkForm` → Validation + normalization
+* `BookmarkList` → Presentational rendering
 
 ---
 
@@ -268,37 +328,23 @@ npm run dev
 * PostgreSQL indexing strategy
 * Realtime WAL streaming configuration
 * Production OAuth redirect handling
-* Next.js App Router architecture
-* Secure frontend practices
+* Secure frontend architecture using Next.js App Router
 
 ---
 
-# 🧩 Future Improvements
+# 🔮 Future Improvements
 
 * Edit bookmark functionality
-* Pagination for large datasets
+* Pagination for larger datasets
 * Optimistic UI updates
 * Bookmark categorization
 * Rate limiting on insert
-* Audit logging
-
----
-
-# ⏱ Development Context
-
-Built as part of a 72-hour micro-challenge.
-
-Primary focus:
-
-* Correctness
-* Security
-* Production readiness
-* Architectural clarity
+* Activity logging
 
 ---
 
 # 📌 Final Statement
 
-This application is fully deployed, production tested, and security-aware.
+This application is fully deployed, production-tested, and security-focused.
 
-It reflects deliberate architectural decisions rather than surface-level implementation.
+It reflects deliberate architectural decisions prioritizing correctness, security, and maintainability rather than surface-level feature completion.
